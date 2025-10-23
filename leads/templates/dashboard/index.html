@@ -1,0 +1,160 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard - Gym Lead Qualifier{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-speedometer2"></i> Dashboard</h1>
+    <button class="btn btn-primary" onclick="checkEmailNow()">
+        <i class="bi bi-envelope-check"></i> Check Email Now
+    </button>
+</div>
+
+<!-- Stats Row -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-2 text-muted">Active Conversations</h6>
+                <h2 class="card-title mb-0">{{ active_count }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card" style="border-left-color: var(--warning-color);">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-2 text-muted">Cold Leads</h6>
+                <h2 class="card-title mb-0">{{ cold_count }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card" style="border-left-color: var(--success-color);">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-2 text-muted">Completed</h6>
+                <h2 class="card-title mb-0">{{ completed_count }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card" style="border-left-color: var(--danger-color);">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-2 text-muted">Pending Approval</h6>
+                <h2 class="card-title mb-0">{{ pending_responses|length }}</h2>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Pending Responses Queue -->
+<div class="row">
+    <div class="col-12">
+        <h3 class="mb-3">
+            <i class="bi bi-hourglass-split"></i> Pending Responses
+            <span class="badge bg-warning text-dark">{{ pending_responses|length }}</span>
+        </h3>
+        
+        {% if pending_responses %}
+        <div class="row">
+            {% for pending in pending_responses %}
+            <div class="col-md-6 mb-3">
+                <div class="card pending-response-card" onclick="window.location='{% url 'pending_detail' pending.id %}'">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <h5 class="card-title mb-0">
+                                {{ pending.conversation.prospect.first_name }}
+                            </h5>
+                            <span class="badge llm-provider-badge bg-info">
+                                {{ pending.llm_provider|upper }}
+                            </span>
+                        </div>
+                        <p class="text-muted small mb-2">
+                            <i class="bi bi-envelope"></i> {{ pending.conversation.prospect.email }}
+                        </p>
+                        <p class="card-text text-truncate" style="max-height: 3rem;">
+                            {{ pending.llm_content|truncatewords:20 }}
+                        </p>
+                        <div class="d-flex justify-content-between align-items-center mt-2">
+                            <small class="text-muted">
+                                <i class="bi bi-clock"></i> {{ pending.created_at|timesince }} ago
+                            </small>
+                            <span class="badge bg-primary">Click to Review</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="alert alert-info">
+            <i class="bi bi-info-circle"></i> No pending responses. All caught up!
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Cold Leads (if enabled) -->
+{% if config.cold_lead_notifications_enabled and cold_leads %}
+<div class="row mt-4">
+    <div class="col-12">
+        <h3 class="mb-3">
+            <i class="bi bi-snow"></i> Cold Leads
+            <span class="badge bg-warning text-dark">{{ cold_leads|length }}</span>
+        </h3>
+        
+        <div class="list-group">
+            {% for conv in cold_leads %}
+            <a href="{% url 'conversation_detail' conv.id %}" class="list-group-item list-group-item-action">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="mb-1">{{ conv.prospect.first_name }}</h6>
+                        <small class="text-muted">{{ conv.prospect.email }}</small>
+                    </div>
+                    <div class="text-end">
+                        <span class="badge bg-warning text-dark">Cold</span>
+                        <br>
+                        <small class="text-muted">{{ conv.last_message_at|timesince }} ago</small>
+                    </div>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function checkEmailNow() {
+    const btn = event.target.closest('button');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Checking...';
+    
+    try {
+        const response = await fetch('{% url "check_email_now" %}', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+            },
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alert(`✓ ${data.message}`);
+            location.reload();
+        } else {
+            alert(`✗ Error: ${data.message}`);
+        }
+    } catch (error) {
+        alert('Error checking email: ' + error);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
+}
+</script>
+{% endblock %}

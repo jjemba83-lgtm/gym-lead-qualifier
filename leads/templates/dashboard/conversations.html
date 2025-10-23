@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+
+{% block title %}All Conversations - Gym Lead Qualifier{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-chat-dots"></i> All Conversations</h1>
+</div>
+
+<!-- Filter Tabs -->
+<ul class="nav nav-tabs mb-4">
+    <li class="nav-item">
+        <a class="nav-link {% if status_filter == 'all' %}active{% endif %}" href="?status=all">
+            All
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if status_filter == 'active' %}active{% endif %}" href="?status=active">
+            Active
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if status_filter == 'cold' %}active{% endif %}" href="?status=cold">
+            Cold
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if status_filter == 'complete' %}active{% endif %}" href="?status=complete">
+            Complete
+        </a>
+    </li>
+</ul>
+
+<!-- Conversations List -->
+{% if conversations %}
+<div class="row">
+    {% for conversation in conversations %}
+    <div class="col-md-6 col-lg-4 mb-3">
+        <div class="card conversation-card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <h5 class="card-title mb-0">{{ conversation.prospect.first_name }}</h5>
+                    {% if conversation.status == 'active' %}
+                    <span class="badge badge-status bg-success">Active</span>
+                    {% elif conversation.status == 'cold' %}
+                    <span class="badge badge-status bg-warning text-dark">Cold</span>
+                    {% else %}
+                    <span class="badge badge-status bg-secondary">Complete</span>
+                    {% endif %}
+                </div>
+                
+                <p class="text-muted small mb-2">
+                    <i class="bi bi-envelope"></i> {{ conversation.prospect.email }}
+                </p>
+                
+                <p class="text-muted small mb-3">
+                    <i class="bi bi-chat-left-text"></i> {{ conversation.message_count }} messages
+                </p>
+                
+                {% if conversation.outcome %}
+                <p class="small mb-2">
+                    <strong>Outcome:</strong>
+                    <span class="badge bg-info">{{ conversation.get_outcome_display }}</span>
+                </p>
+                {% endif %}
+                
+                <p class="text-muted small mb-3">
+                    <i class="bi bi-clock"></i> Last activity: {{ conversation.last_message_at|timesince }} ago
+                </p>
+                
+                <a href="{% url 'conversation_detail' conversation.id %}" class="btn btn-primary btn-sm w-100">
+                    <i class="bi bi-eye"></i> View Details
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="alert alert-info">
+    <i class="bi bi-info-circle"></i> No conversations found with status: <strong>{{ status_filter }}</strong>
+</div>
+{% endif %}
+
+{% endblock %}

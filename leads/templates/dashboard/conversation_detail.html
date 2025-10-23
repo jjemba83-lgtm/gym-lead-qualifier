@@ -1,0 +1,133 @@
+{% extends 'base.html' %}
+
+{% block title %}Conversation - {{ conversation.prospect.first_name }}{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <a href="{% url 'conversations_list' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> Back to Conversations
+    </a>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2>{{ conversation.prospect.first_name }}'s Conversation</h2>
+            {% if conversation.status == 'active' %}
+            <span class="badge bg-success">Active</span>
+            {% elif conversation.status == 'cold' %}
+            <span class="badge bg-warning text-dark">Cold</span>
+            {% else %}
+            <span class="badge bg-secondary">Complete</span>
+            {% endif %}
+        </div>
+        
+        <!-- Full Message Thread -->
+        <div class="card mb-4">
+            <div class="card-header bg-light">
+                <strong><i class="bi bi-chat-dots"></i> Message Thread</strong>
+            </div>
+            <div class="card-body" style="max-height: 600px; overflow-y: auto;">
+                {% for message in messages %}
+                <div class="message-bubble {% if message.role == 'prospect' %}message-prospect{% else %}message-sales{% endif %}">
+                    <strong>
+                        {% if message.role == 'prospect' %}
+                            <i class="bi bi-person"></i> {{ conversation.prospect.first_name }}
+                        {% else %}
+                            <i class="bi bi-robot"></i> Sales Bot
+                            {% if message.role == 'sent' %}
+                            <span class="badge bg-success ms-2">Sent</span>
+                            {% endif %}
+                        {% endif %}
+                    </strong>
+                    <p class="mb-0 mt-1">{{ message.content }}</p>
+                    <small class="text-muted">{{ message.created_at|date:"M d, Y g:i A" }}</small>
+                </div>
+                {% empty %}
+                <p class="text-muted">No messages yet.</p>
+                {% endfor %}
+            </div>
+        </div>
+        
+        <!-- Pending Responses for this Conversation -->
+        {% if pending_responses %}
+        <div class="card">
+            <div class="card-header bg-light">
+                <strong><i class="bi bi-hourglass-split"></i> Pending Responses</strong>
+            </div>
+            <div class="card-body">
+                {% for pending in pending_responses %}
+                <div class="border-start border-warning border-3 ps-3 mb-3">
+                    <p class="mb-1"><strong>Status:</strong> <span class="badge bg-{{ pending.status|yesno:"success,warning,secondary" }}">{{ pending.get_status_display }}</span></p>
+                    <p class="mb-1"><small class="text-muted">Generated {{ pending.created_at|timesince }} ago using {{ pending.llm_provider|upper }}</small></p>
+                    {% if pending.status == 'pending' %}
+                    <a href="{% url 'pending_detail' pending.id %}" class="btn btn-sm btn-primary mt-2">
+                        <i class="bi bi-eye"></i> Review
+                    </a>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    
+    <div class="col-md-4">
+        <!-- Prospect Info -->
+        <div class="card mb-3">
+            <div class="card-header bg-primary text-white">
+                <strong><i class="bi bi-person-vcard"></i> Prospect Information</strong>
+            </div>
+            <div class="card-body">
+                <p class="mb-2"><strong>Name:</strong> {{ conversation.prospect.first_name }}</p>
+                <p class="mb-2"><strong>Email:</strong><br>{{ conversation.prospect.email }}</p>
+                <p class="mb-2"><strong>Phone:</strong> {{ conversation.prospect.phone|default:"N/A" }}</p>
+                <p class="mb-0"><strong>First Contact:</strong><br>{{ conversation.prospect.created_at|date:"M d, Y" }}</p>
+            </div>
+        </div>
+        
+        <!-- Conversation Stats -->
+        <div class="card mb-3">
+            <div class="card-header bg-light">
+                <strong><i class="bi bi-bar-chart"></i> Conversation Stats</strong>
+            </div>
+            <div class="card-body">
+                <p class="mb-2"><strong>Status:</strong> <span class="badge bg-secondary">{{ conversation.get_status_display }}</span></p>
+                {% if conversation.outcome %}
+                <p class="mb-2"><strong>Outcome:</strong><br><span class="badge bg-info">{{ conversation.get_outcome_display }}</span></p>
+                {% endif %}
+                <p class="mb-2"><strong>Total Messages:</strong> {{ messages|length }}</p>
+                <p class="mb-2"><strong>Started:</strong><br>{{ conversation.created_at|date:"M d, Y g:i A" }}</p>
+                <p class="mb-0"><strong>Last Activity:</strong><br>{{ conversation.last_message_at|date:"M d, Y g:i A" }}</p>
+            </div>
+        </div>
+        
+        <!-- Manual Actions -->
+        {% if conversation.status == 'active' %}
+        <div class="card">
+            <div class="card-header bg-light">
+                <strong><i class="bi bi-hand-index"></i> Manual Actions</strong>
+            </div>
+            <div class="card-body">
+                <form method="post" action="{% url 'mark_complete' conversation.id %}">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label"><strong>Mark as Complete</strong></label>
+                        <select name="outcome" class="form-select" required>
+                            <option value="">Select outcome...</option>
+                            <option value="agreed_to_free_class">Agreed to Free Class</option>
+                            <option value="not_interested">Not Interested</option>
+                            <option value="reached_message_limit">Reached Message Limit</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-warning w-100">
+                        <i class="bi bi-check-circle"></i> Mark Complete
+                    </button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}
