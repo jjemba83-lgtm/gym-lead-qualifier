@@ -149,6 +149,41 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 GMAIL_CREDENTIALS_PATH = BASE_DIR / 'secrets' / 'gmail_credentials.json'
 GMAIL_TOKEN_PATH = BASE_DIR / 'secrets' / 'gmail_token.json'
 
+# Sales Team Notifications
+SALES_TEAM_EMAIL = os.getenv('SALES_TEAM_EMAIL', 'stephen.l.roberts20@gmail.com')
+# Future: Support multiple emails
+# SALES_TEAM_EMAILS = os.getenv('SALES_TEAM_EMAILS', '').split(',')
+
+# Business Hours Configuration
+BUSINESS_HOURS_START = int(os.getenv('BUSINESS_HOURS_START', '9'))  # 9 AM
+BUSINESS_HOURS_END = int(os.getenv('BUSINESS_HOURS_END', '20'))  # 8 PM
+BUSINESS_TIMEZONE = os.getenv('BUSINESS_TIMEZONE', 'America/New_York')
+
+# Message Delay Configuration
+MESSAGE_DELAY_MIN = int(os.getenv('MESSAGE_DELAY_MIN', '5'))  # 5 minutes
+MESSAGE_DELAY_MAX = int(os.getenv('MESSAGE_DELAY_MAX', '10'))  # 10 minutes
+
+# Test Mode - bypasses delays and business hour restrictions
+TEST_MODE = os.getenv('TEST_MODE', 'False') == 'True'
+
+# Lead Scoring Thresholds
+HOT_LEAD_SCORE_THRESHOLD = float(os.getenv('HOT_LEAD_SCORE_THRESHOLD', '0.7'))
+WARM_LEAD_SCORE_THRESHOLD = float(os.getenv('WARM_LEAD_SCORE_THRESHOLD', '0.5'))
+
+# WhatsApp Configuration (Phase 2)
+WHATSAPP_PHONE_NUMBER = os.getenv('WHATSAPP_PHONE_NUMBER')
+WHATSAPP_TEST_MODE = os.getenv('WHATSAPP_TEST_MODE', 'True') == 'True'
+
+# Zapier Webhooks (Phase 3)
+ZAPIER_CLUBREADY_WEBHOOK = os.getenv('ZAPIER_CLUBREADY_WEBHOOK')
+ZAPIER_TEST_MODE = os.getenv('ZAPIER_TEST_MODE', 'True') == 'True'
+
+# Twilio Configuration (Future)
+TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
+TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
+TWILIO_PHONE_NUMBER = os.getenv('TWILIO_PHONE_NUMBER')
+TWILIO_TEST_MODE = os.getenv('TWILIO_TEST_MODE', 'True') == 'True'
+
 # Logging
 LOGGING = {
     'version': 1,

@@ -183,6 +183,42 @@ Return ONLY valid JSON in this exact format:
 }}"""
 
 
+# New closing message prompts
+CLOSING_MESSAGE_PROMPTS = {
+    'agreed_to_free_class': """You're wrapping up a conversation with someone who has agreed to try a free class.
+Write a brief, warm closing message (2-3 sentences max) that:
+1. Confirms their interest in the free class
+2. Mentions that a team member will contact them within 24 hours to schedule
+3. Thanks them warmly
+
+Keep it natural and friendly. Don't use formal language or marketing speak.
+Example tone: "Awesome, {name}! I'm excited you want to try a class. Someone from our team will reach out within 24 hours to get you scheduled. Looking forward to seeing you in the gym!"
+
+DO NOT include any JSON or structured data in your response.""",
+    
+    'not_interested': """You're wrapping up a conversation with someone who is not interested.
+Write a brief, respectful closing message (1-2 sentences max) that:
+1. Thanks them for their time
+2. Leaves the door open for the future
+
+Keep it gracious and brief. No hard sell.
+Example tone: "No problem at all! Thanks for taking the time to chat, and feel free to reach out if you change your mind."
+
+DO NOT include any JSON or structured data in your response.""",
+    
+    'reached_message_limit': """You're wrapping up a conversation that has reached the message limit.
+Write a brief, helpful closing message (2-3 sentences max) that:
+1. Mentions that a specialist can answer any remaining questions
+2. Provides next steps (team member will follow up)
+3. Thanks them for their interest
+
+Keep it professional and helpful.
+Example tone: "I want to make sure all your questions get answered! A team member will follow up within 24 hours to discuss details and help you get started. Thanks for your interest!"
+
+DO NOT include any JSON or structured data in your response.""",
+}
+
+
 def _call_llm(messages: list, provider: str = 'grok', temperature: float = 0.3, max_tokens: int = 120) -> Tuple[str, str]:
     """
     Call LLM API with the specified provider.
@@ -292,6 +328,60 @@ def generate_response(conversation_id: int) -> Tuple[str, str]:
         raise
     except Exception as e:
         logger.error(f"Error generating response: {e}")
+        raise
+
+
+def generate_closing_message(conversation_id: int, outcome: str) -> Tuple[str, str]:
+    """
+    Generate appropriate closing message based on conversation outcome.
+    Returns (closing_message, provider_used).
+    """
+    try:
+        conversation = Conversation.objects.get(id=conversation_id)
+        config = SystemConfig.load()
+        
+        # Get the appropriate closing prompt
+        closing_prompt = CLOSING_MESSAGE_PROMPTS.get(
+            outcome, 
+            CLOSING_MESSAGE_PROMPTS['reached_message_limit']
+        )
+        
+        # Build minimal context - just recent messages and closing instruction
+        recent_messages = conversation.messages.order_by('-created_at')[:3]
+        
+        messages = [
+            {"role": "system", "content": closing_prompt},
+        ]
+        
+        # Add recent context for personalization
+        for msg in reversed(recent_messages):
+            if msg.role == 'prospect':
+                messages.append({"role": "user", "content": msg.content})
+            elif msg.role in ['llm_generated', 'sent']:
+                messages.append({"role": "assistant", "content": msg.content})
+        
+        # Add instruction with the person's name
+        messages.append({
+            "role": "user", 
+            "content": f"Generate the closing message for {conversation.prospect.first_name}."
+        })
+        
+        # Call LLM with lower temperature for consistency
+        closing_text, provider = _call_llm(
+            messages,
+            provider=config.llm_provider_primary,
+            temperature=0.2,  # Lower temperature for more consistent closings
+            max_tokens=100
+        )
+        
+        logger.info(f"Generated closing message for conversation {conversation_id} ({outcome})")
+        return closing_text, provider
+        
+    except Conversation.DoesNotExist:
+        logger.error(f"Conversation {conversation_id} not found")
+        raise
+    except Exception as e:
+        logger.error(f"Error generating closing message: {e}")
         raise
 
 

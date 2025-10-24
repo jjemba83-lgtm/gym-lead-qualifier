@@ -6,6 +6,7 @@ import logging
 import base64
 import re
 from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from typing import List, Dict, Optional
 from django.conf import settings
 from google.auth.transport.requests import Request
@@ -288,3 +289,137 @@ def send_response(to_email: str, subject: str, message_content: str) -> bool:
     except Exception as e:
         logger.error(f"Error sending email to {to_email}: {e}")
         return False
+
+
+def send_hot_lead_notification(conversation, lead_score: Dict) -> bool:
+    """
+    Send immediate notification for hot leads to sales team.
+    Includes lead score, conversation summary, and action items.
+    
+    Args:
+        conversation: Conversation model instance
+        lead_score: Dict from calculate_lead_score with score, factors, recommendations
+    
+    Returns:
+        True if sent successfully, False otherwise
+    """
+    try:
+        # Get sales team email
+        sales_email = getattr(settings, 'SALES_TEAM_EMAIL', None)
+        if not sales_email:
+            logger.warning("SALES_TEAM_EMAIL not configured in settings")
+            return False
+        
+        # Determine urgency level
+        score = lead_score['score']
+        if score >= 0.8:
+            urgency = "🔥🔥🔥 URGENT"
+            priority = "IMMEDIATE FOLLOW-UP REQUIRED"
+        elif score >= 0.7:
+            urgency = "🔥🔥 HIGH PRIORITY"
+            priority = "Follow up within 2 hours"
+        else:
+            urgency = "🔥 WARM LEAD"
+            priority = "Follow up today"
+        
+        # Build subject line
+        subject = f"{urgency}: {conversation.prospect.first_name} - Score {score:.0%}"
+        if conversation.outcome == 'agreed_to_free_class':
+            subject += " - READY TO BOOK!"
+        
+        # Get recent conversation for context
+        recent_messages = conversation.messages.order_by('-created_at')[:5]
+        
+        # Build email body (plain text for better compatibility)
+        body = f"""HOT LEAD ALERT - {priority}
+{'='*60}
+
+PROSPECT INFORMATION:
+Name: {conversation.prospect.first_name}
+Email: {conversation.prospect.email}
+Phone: {conversation.prospect.phone or 'Not provided'}
+
+LEAD SCORE: {score:.0%} {lead_score.get('interpretation', '')}
+{'='*60}
+
+SCORING FACTORS:
+"""
+        
+        # Add scoring factors
+        for factor in lead_score.get('factors', [])[:5]:
+            body += f"• {factor}\n"
+        
+        # Add intent if detected
+        if lead_score.get('intent'):
+            intent_data = lead_score['intent']
+            body += f"\nDETECTED INTENT:\n"
+            body += f"• Goal: {intent_data.get('detected_intent', 'Unknown')}\n"
+            body += f"• Confidence: {intent_data.get('confidence_level', 0):.0%}\n"
+            if intent_data.get('best_time_to_visit'):
+                body += f"• Preferred time: {intent_data['best_time_to_visit']}\n"
+        
+        # Add recommendations
+        if lead_score.get('recommendations'):
+            body += f"\nRECOMMENDED ACTIONS:\n"
+            for rec in lead_score['recommendations'][:3]:
+                body += f"✓ {rec}\n"
+        
+        # Add conversation summary
+        body += f"""
+{'='*60}
+RECENT CONVERSATION:
+"""
+        
+        for msg in reversed(recent_messages):
+            role = "Prospect" if msg.role == 'prospect' else "Bot"
+            # Truncate long messages
+            content = msg.content[:200] + "..." if len(msg.content) > 200 else msg.content
+            body += f"\n{role}: {content}\n"
+        
+        # Add action footer
+        body += f"""
+{'='*60}
+NEXT STEPS:
+1. {'Call immediately' if conversation.prospect.phone else 'Email immediately'}
+2. Schedule free class while interest is high
+3. Mention their specific goal: {lead_score.get('intent', {}).get('detected_intent', 'fitness')}
+4. Log interaction in ClubReady
+
+Time is critical - leads cool down quickly!
+{'='*60}
+
+This is an automated notification from the Gym Lead Qualifier system.
+Dashboard: http://localhost:8000/dashboard/conversation/{conversation.id}/
+"""
+        
+        # Send the email
+        success = send_response(
+            to_email=sales_email,
+            subject=subject,
+            message_content=body
+        )
+        
+        if success:
+            logger.info(f"Hot lead notification sent for {conversation.prospect.first_name} "
+                       f"(Score: {score:.0%})")
+        else:
+            logger.error(f"Failed to send hot lead notification for {conversation.prospect.first_name}")
+        
+        return success
+        
+    except Exception as e:
+        logger.error(f"Error sending hot lead notification: {e}")
+        return False
+
+
+def send_daily_lead_summary() -> bool:
+    """
+    Send daily summary of all leads to sales team.
+    Future enhancement - not implemented yet.
+    """
+    # TODO: Implement daily summary
+    # - Count of new leads
+    # - Hot leads that weren't contacted
+    # - Conversion metrics
+    # - Top performing messages/approaches
+    pass

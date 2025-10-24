@@ -4,8 +4,22 @@ Run this command every 5 minutes via cron or manually.
 """
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from django.conf import settings
 from leads.services import email_service, prospect_service, llm_service
+from leads.services.lead_scoring_service import calculate_lead_score
 from leads.models import Conversation, SystemConfig
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Standard opening template - no LLM needed!
+STANDARD_OPENING_TEMPLATE = """Hi {first_name}! Thanks for reaching out about our boxing fitness gym. To help match you with the right class, I have a few quick questions:
+
+1. What's your main fitness goal? (weight loss, stress relief, learn technique, general fitness, etc.)
+2. How often do you currently exercise?
+3. Any concerns about high-intensity training?
+
+Looking forward to getting you started!"""
 
 
 class Command(BaseCommand):
@@ -34,15 +48,16 @@ class Command(BaseCommand):
                         thread_subject=prospect_data.get('thread_subject')
                     )
                     
-                    # Generate initial LLM response
-                    self.stdout.write(f"Generating response for {prospect.first_name}...")
-                    response_text, provider = llm_service.generate_response(conversation.id)
+                    # Use template for initial response - NO LLM CALL!
+                    response_text = STANDARD_OPENING_TEMPLATE.format(
+                        first_name=prospect.first_name
+                    )
                     
                     # Create pending response for approval
                     prospect_service.create_pending_response(
                         conversation=conversation,
                         llm_content=response_text,
-                        llm_provider=provider
+                        llm_provider='template'  # Mark as template, not LLM
                     )
                     
                     self.stdout.write(self.style.SUCCESS(
@@ -53,6 +68,7 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.ERROR(
                     f"✗ Error processing prospect {prospect_data.get('email')}: {str(e)}"
                 ))
+                logger.exception(f"Error processing prospect {prospect_data.get('email')}")
         
         if not new_prospects:
             self.stdout.write("No new prospect notifications found.")
@@ -101,31 +117,84 @@ class Command(BaseCommand):
                     )
                     
                     if should_end and outcome:
-                        # Update conversation outcome
+                        # Calculate lead score before closing
+                        lead_score = calculate_lead_score(conversation)
+                        
+                        # Generate closing message
+                        self.stdout.write(f"Generating closing message for {conversation.prospect.first_name}...")
+                        closing_message, provider = llm_service.generate_closing_message(
+                            conversation.id,
+                            outcome
+                        )
+                        
+                        # Create pending response for the closing message
+                        prospect_service.create_pending_response(
+                            conversation=conversation,
+                            llm_content=closing_message,
+                            llm_provider=provider
+                        )
+                        
+                        # Update conversation outcome (but keep active until closing is sent)
                         prospect_service.update_conversation_status(
                             conversation.id,
-                            status='complete',
+                            status='active',  # Keep active until closing is sent
                             outcome=outcome
                         )
+                        
+                        # Send hot lead notification if score is high
+                        if lead_score['is_hot']:
+                            self.stdout.write(self.style.SUCCESS(
+                                f"🔥 HOT LEAD DETECTED: {conversation.prospect.first_name} "
+                                f"(Score: {lead_score['score']:.0%})"
+                            ))
+                            
+                            # Send hot lead email notification
+                            if hasattr(settings, 'SALES_TEAM_EMAIL'):
+                                try:
+                                    email_service.send_hot_lead_notification(
+                                        conversation=conversation,
+                                        lead_score=lead_score
+                                    )
+                                    self.stdout.write(self.style.SUCCESS(
+                                        f"✓ Hot lead notification sent to {settings.SALES_TEAM_EMAIL}"
+                                    ))
+                                except Exception as e:
+                                    self.stdout.write(self.style.ERROR(
+                                        f"✗ Failed to send hot lead notification: {str(e)}"
+                                    ))
+                        
                         self.stdout.write(self.style.SUCCESS(
-                            f"✓ Conversation completed for {conversation.prospect.first_name}: {outcome}"
+                            f"✓ Conversation ready to close for {conversation.prospect.first_name}: {outcome}"
                         ))
                         continue
                     
                     # Check message limit
                     config = SystemConfig.load()
                     if conversation.message_count() >= config.max_message_exchanges * 2:  # *2 for back-and-forth
+                        # Generate closing message for message limit
+                        closing_message, provider = llm_service.generate_closing_message(
+                            conversation.id,
+                            'reached_message_limit'
+                        )
+                        
+                        prospect_service.create_pending_response(
+                            conversation=conversation,
+                            llm_content=closing_message,
+                            llm_provider=provider
+                        )
+                        
                         prospect_service.update_conversation_status(
                             conversation.id,
-                            status='complete',
+                            status='active',  # Keep active until closing is sent
                             outcome='reached_message_limit'
                         )
+                        
                         self.stdout.write(self.style.WARNING(
                             f"⚠ Message limit reached for {conversation.prospect.first_name}"
                         ))
                         continue
                     
-                    # Generate LLM response
+                    # Generate LLM response for ongoing conversation
                     self.stdout.write(f"Generating response for {conversation.prospect.first_name}...")
                     response_text, provider = llm_service.generate_response(conversation.id)
                     
@@ -136,6 +205,14 @@ class Command(BaseCommand):
                         llm_provider=provider
                     )
                     
+                    # Calculate and log lead score for monitoring
+                    lead_score = calculate_lead_score(conversation)
+                    if lead_score['score'] >= 0.5:
+                        self.stdout.write(
+                            f"  Lead score: {lead_score['score']:.0%} - "
+                            f"{', '.join(lead_score['factors'][:2])}"
+                        )
+                    
                     self.stdout.write(self.style.SUCCESS(
                         f"✓ Processed reply from {conversation.prospect.first_name}"
                     ))
@@ -144,6 +221,7 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.ERROR(
                     f"✗ Error processing reply: {str(e)}"
                 ))
+                logger.exception(f"Error processing reply from {reply_data.get('prospect_email')}")
         
         if not replies:
             self.stdout.write("No new replies found.")
