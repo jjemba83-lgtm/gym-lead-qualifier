@@ -68,7 +68,17 @@ def approve_response(request, pending_id):
                 role='sent',
                 content=pending.get_final_content()
             )
-            messages.success(request, "Response approved and sent successfully!")
+            
+            # Check if this was a closing message
+            if pending.conversation.outcome:
+                # Mark conversation as complete since we sent the closing
+                prospect_service.update_conversation_status(
+                    pending.conversation.id,
+                    status='complete'
+                )
+                messages.success(request, f"Response sent and conversation completed ({pending.conversation.get_outcome_display()})!")
+            else:
+                messages.success(request, "Response approved and sent successfully!")
         else:
             messages.error(request, "Response approved but failed to send email.")
         
@@ -113,7 +123,17 @@ def edit_response(request, pending_id):
                 role='sent',
                 content=edited_content
             )
-            messages.success(request, "Edited response sent successfully!")
+            
+            # Check if this was a closing message
+            if pending.conversation.outcome:
+                # Mark conversation as complete since we sent the closing
+                prospect_service.update_conversation_status(
+                    pending.conversation.id,
+                    status='complete'
+                )
+                messages.success(request, f"Edited response sent and conversation completed ({pending.conversation.get_outcome_display()})!")
+            else:
+                messages.success(request, "Edited response sent successfully!")
         else:
             messages.error(request, "Response saved but failed to send email.")
         
@@ -129,11 +149,25 @@ def edit_response(request, pending_id):
 def reject_response(request, pending_id):
     """Reject a pending response."""
     try:
+        pending = get_object_or_404(PendingResponse, id=pending_id)
+        
+        # If this was a closing message for a completed conversation, 
+        # we need to handle it differently
+        if pending.conversation.outcome:
+            # Keep conversation active since we rejected the closing
+            prospect_service.update_conversation_status(
+                pending.conversation.id,
+                status='active',
+                outcome=None  # Clear outcome since we rejected the closing
+            )
+            messages.info(request, "Response rejected. Conversation remains active.")
+        else:
+            messages.info(request, "Response rejected.")
+        
+        # Mark pending as rejected
         success, msg = prospect_service.reject_response(pending_id)
         
-        if success:
-            messages.info(request, "Response rejected.")
-        else:
+        if not success:
             messages.error(request, f"Error rejecting response: {msg}")
         
         return redirect('dashboard')

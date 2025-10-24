@@ -1,6 +1,10 @@
 """
 LLM service for generating responses using Grok (primary) or OpenAI (fallback).
 Uses the exact prompts from the original simulator.py file.
+
+IMPORTANT: Intent detection is handled by the sales LLM during conversation,
+not through separate API calls. The sales prompt includes instructions for
+INTENT_DETECTION JSON when explicitly requested.
 """
 import logging
 import json
@@ -392,6 +396,9 @@ def detect_conversation_outcome(conversation_id: int, prospect_response: str) ->
     - 'agreed_to_free_class'
     - 'not_interested'
     - None (continue conversation)
+    
+    NOTE: This does NOT detect intent - that should come from the sales LLM's
+    conversation flow when it includes INTENT_DETECTION JSON.
     """
     try:
         conversation = Conversation.objects.get(id=conversation_id)
@@ -447,43 +454,7 @@ def detect_conversation_outcome(conversation_id: int, prospect_response: str) ->
         return False, None
 
 
-def detect_intent(conversation_id: int) -> Optional[dict]:
-    """
-    Request intent detection from the LLM.
-    Returns dict with detected_intent, confidence_level, reasoning, best_time_to_visit.
-    """
-    try:
-        conversation = Conversation.objects.get(id=conversation_id)
-        
-        # Build context and add intent detection request
-        messages = build_conversation_context(conversation)
-        messages.append({
-            "role": "user",
-            "content": "Based on our conversation, please provide your INTENT_DETECTION assessment in the required JSON format."
-        })
-        
-        response_text, _ = _call_llm(
-            messages,
-            provider='openai',
-            temperature=0.3,
-            max_tokens=200
-        )
-        
-        # Extract JSON from response
-        if "INTENT_DETECTION:" in response_text:
-            json_start = response_text.find("{")
-            json_end = response_text.rfind("}") + 1
-            
-            if json_start != -1 and json_end > json_start:
-                json_str = response_text[json_start:json_end]
-                data = json.loads(json_str)
-                
-                logger.info(f"Intent detected: {data.get('detected_intent')}")
-                return data
-        
-        logger.warning("Could not extract intent detection from response")
-        return None
-        
-    except Exception as e:
-        logger.error(f"Error detecting intent: {e}")
-        return None
+# REMOVED: detect_intent() function
+# Intent detection should come from the sales LLM's conversation flow,
+# not a separate API call. The sales LLM should include INTENT_DETECTION
+# in its response when it determines the prospect's intent.

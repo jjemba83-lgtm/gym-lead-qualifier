@@ -3,7 +3,26 @@ Database models for the gym lead qualification system.
 """
 from django.db import models
 from django.utils import timezone
+from enum import Enum
 
+class Intent(str, Enum):
+    """Possible fitness intents/goals."""
+    WEIGHT_LOSS = "weight_loss"
+    STRESS_RELIEF = "stress_relief_mental_health"
+    BOXING_TECHNIQUE = "learn_boxing_technique"
+    GENERAL_FITNESS = "general_fitness"
+    SOCIAL_COMMUNITY = "social_community"
+    JUST_FREE_CLASS = "just_wants_free_class"
+
+
+# Then add this field to your Conversation model:
+# detected_intent = models.CharField(
+#     max_length=50,
+#     choices=[(tag.value, tag.name) for tag in Intent],
+#     blank=True,
+#     null=True,
+#     help_text="Intent detected by sales LLM"
+# )
 
 class Prospect(models.Model):
     """Represents a potential gym member."""
@@ -32,13 +51,22 @@ class Conversation(models.Model):
         ('not_interested', 'Not Interested'),
         ('reached_message_limit', 'Reached Message Limit'),
     ]
+    
 
     prospect = models.ForeignKey(Prospect, on_delete=models.CASCADE, related_name='conversations')
     thread_subject = models.CharField(max_length=255, help_text="Email subject for threading")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
     outcome = models.CharField(max_length=30, choices=OUTCOME_CHOICES, blank=True, null=True)
+    detected_intent = models.CharField(
+        max_length=50,
+        choices=[(tag.value, tag.name) for tag in Intent],
+        blank=True,
+        null=True,
+        help_text="Intent detected by sales LLM"
+    )
     last_message_at = models.DateTimeField(default=timezone.now)
     created_at = models.DateTimeField(auto_now_add=True)
+
 
     class Meta:
         ordering = ['-last_message_at']

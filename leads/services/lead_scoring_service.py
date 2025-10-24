@@ -2,7 +2,6 @@
 Lead scoring service for identifying hot leads based on conversation patterns.
 """
 import logging
-import json
 from datetime import timedelta
 from typing import Dict, Optional
 from leads.models import Conversation, Message
@@ -12,71 +11,47 @@ logger = logging.getLogger(__name__)
 
 def calculate_lead_score(conversation: Conversation) -> Dict:
     """
-    Calculate lead score based on multiple factors including intent detection.
+    Calculate lead score based on conversation patterns and behaviors.
     
     Returns dict with:
     - score: 0.0 to 1.0
     - factors: list of scoring factors
     - is_hot: boolean (score >= 0.7)
-    - intent: detected intent data if available
     - recommendations: list of follow-up actions
     """
-    score = 0.4  # Base score for any engaged lead
+    score = 0.3  # Base score for any engaged lead
     factors = []
     recommendations = []
     
-    # 1. Intent Detection (highest weight - up to 0.35 points)
-    intent_data = extract_intent_from_conversation(conversation)
-    if intent_data:
-        confidence = intent_data.get('confidence_level', 0)
-        detected_intent = intent_data.get('detected_intent', '')
-        
-        if confidence > 0.8:
-            score += 0.25
-            factors.append(f"Clear intent: {detected_intent}")
-            
-            # High-value intents get bonus
-            high_value_intents = ['weight_loss', 'stress_relief_mental_health', 'learn_boxing_technique']
-            if detected_intent in high_value_intents:
-                score += 0.1
-                factors.append("High-value goal")
-                recommendations.append("Premium package opportunity")
-        elif confidence > 0.6:
-            score += 0.15
-            factors.append(f"Moderate intent: {detected_intent}")
-        elif confidence > 0.4:
-            score += 0.05
-            factors.append("Unclear intent")
-    
-    # 2. Response Time (up to 0.2 points)
+    # 1. Response Time (up to 0.25 points - highest weight)
     first_reply = conversation.messages.filter(role='prospect').first()
     if first_reply:
         time_to_respond = (first_reply.created_at - conversation.created_at).total_seconds()
         
         if time_to_respond < 300:  # Under 5 minutes
-            score += 0.2
+            score += 0.25
             factors.append("Very fast response (<5 min)")
             recommendations.append("Call immediately - high engagement")
         elif time_to_respond < 900:  # Under 15 minutes
-            score += 0.15
+            score += 0.2
             factors.append("Fast response (<15 min)")
             recommendations.append("Priority follow-up")
         elif time_to_respond < 3600:  # Under 1 hour
-            score += 0.1
+            score += 0.15
             factors.append("Quick response (<1 hr)")
         elif time_to_respond < 86400:  # Under 24 hours
             score += 0.05
             factors.append("Same-day response")
     
-    # 3. Contact Information Completeness (up to 0.1 points)
+    # 2. Contact Information Completeness (up to 0.15 points)
     if conversation.prospect.phone:
-        score += 0.1
+        score += 0.15
         factors.append("Phone provided")
         recommendations.append("SMS follow-up available")
     
-    # 4. Conversation Outcome (up to 0.15 points)
+    # 3. Conversation Outcome (up to 0.3 points - high weight for clear outcomes)
     if conversation.outcome == 'agreed_to_free_class':
-        score += 0.15
+        score += 0.3
         factors.append("Agreed to free class!")
         recommendations.append("Schedule ASAP - ready to convert")
     elif conversation.outcome == 'not_interested':
@@ -84,34 +59,40 @@ def calculate_lead_score(conversation: Conversation) -> Dict:
         factors.append("Not interested")
         recommendations.append("Add to nurture campaign")
     
-    # 5. Engagement Level (up to 0.15 points)
+    # 4. Engagement Level (up to 0.2 points)
     message_count = conversation.message_count()
     prospect_messages = conversation.messages.filter(role='prospect').count()
     
     if prospect_messages >= 3:
-        score += 0.1
+        score += 0.15
         factors.append(f"High engagement ({prospect_messages} messages)")
     elif prospect_messages >= 2:
-        score += 0.05
+        score += 0.1
         factors.append(f"Good engagement ({prospect_messages} messages)")
+    elif prospect_messages >= 1:
+        score += 0.05
+        factors.append("Responded to outreach")
     
     # Check for long messages (shows investment)
-    long_messages = conversation.messages.filter(role='prospect').filter(
-        content__regex=r'.{100,}'  # Messages over 100 chars
+    long_messages = conversation.messages.filter(
+        role='prospect'
+    ).exclude(
+        content__regex=r'^.{0,50}$'  # Exclude messages under 50 chars
     ).count()
+    
     if long_messages > 0:
         score += 0.05
         factors.append("Detailed responses")
     
-    # 6. Buying Signals in Content (up to 0.1 points)
+    # 5. Buying Signals in Content (up to 0.15 points)
     buying_signals = detect_buying_signals(conversation)
     if buying_signals:
-        score += 0.1
+        score += 0.15
         factors.extend(buying_signals['factors'])
         if 'schedule' in buying_signals.get('keywords', []):
             recommendations.append("Ready to schedule - mention available times")
     
-    # 7. Time of Day Bonus (up to 0.05 points)
+    # 6. Time of Day Bonus (up to 0.05 points)
     # People who respond during business hours are often more serious
     if first_reply:
         reply_hour = first_reply.created_at.hour
@@ -119,8 +100,8 @@ def calculate_lead_score(conversation: Conversation) -> Dict:
             score += 0.05
             factors.append("Business hours response")
     
-    # Cap score at 1.0
-    final_score = min(score, 1.0)
+    # Cap score at 1.0 and ensure minimum of 0.0
+    final_score = max(0.0, min(score, 1.0))
     
     # Determine if hot lead
     is_hot = final_score >= 0.7
@@ -141,56 +122,10 @@ def calculate_lead_score(conversation: Conversation) -> Dict:
         'score': final_score,
         'factors': factors,
         'is_hot': is_hot,
-        'intent': intent_data,
         'recommendations': recommendations,
         'interpretation': interpretation,
         'reason': ', '.join(factors[:3]) if factors else 'Standard lead'
     }
-
-
-def extract_intent_from_conversation(conversation: Conversation) -> Optional[Dict]:
-    """
-    Extract intent detection from conversation messages.
-    Looks for the INTENT_DETECTION JSON in LLM messages.
-    """
-    try:
-        # Look through recent LLM messages for intent detection
-        llm_messages = conversation.messages.filter(
-            role__in=['llm_generated', 'sent']
-        ).order_by('-created_at')[:5]  # Check last 5 LLM messages
-        
-        for message in llm_messages:
-            content = message.content
-            
-            # Look for INTENT_DETECTION marker
-            if 'INTENT_DETECTION:' in content:
-                # Extract JSON
-                json_start = content.find('{', content.find('INTENT_DETECTION:'))
-                json_end = content.rfind('}') + 1
-                
-                if json_start != -1 and json_end > json_start:
-                    json_str = content[json_start:json_end]
-                    intent_data = json.loads(json_str)
-                    
-                    logger.info(f"Found intent for conversation {conversation.id}: "
-                              f"{intent_data.get('detected_intent')} "
-                              f"(confidence: {intent_data.get('confidence_level')})")
-                    return intent_data
-        
-        # If no explicit intent detection, try to infer from conversation outcome
-        if conversation.outcome == 'agreed_to_free_class':
-            return {
-                'detected_intent': 'wants_free_class',
-                'confidence_level': 0.9,
-                'reasoning': 'Agreed to free class',
-                'best_time_to_visit': None
-            }
-        
-        return None
-        
-    except Exception as e:
-        logger.error(f"Error extracting intent from conversation {conversation.id}: {e}")
-        return None
 
 
 def detect_buying_signals(conversation: Conversation) -> Optional[Dict]:
@@ -200,7 +135,7 @@ def detect_buying_signals(conversation: Conversation) -> Optional[Dict]:
     buying_keywords = {
         'schedule': ['when', 'what time', 'schedule', 'book', 'sign up', 'available'],
         'price': ['cost', 'price', 'how much', 'fee', 'payment', 'afford'],
-        'commitment': ['ready', 'start', 'begin', 'join', 'lets do', "let's do", 'sounds good'],
+        'commitment': ['ready', 'start', 'begin', 'join', 'lets do', "let's do", 'sounds good', 'yes', 'sure', 'absolutely'],
         'urgency': ['today', 'tomorrow', 'this week', 'soon', 'asap', 'right away'],
         'comparison': ['better than', 'compared to', 'vs', 'other gyms', 'why you']
     }
@@ -276,7 +211,6 @@ def save_lead_score(conversation: Conversation, score_data: Dict) -> None:
     #         'score': score_data['score'],
     #         'factors': score_data['factors'],
     #         'is_hot': score_data['is_hot'],
-    #         'intent_data': score_data.get('intent'),
     #         'calculated_at': timezone.now()
     #     }
     # )

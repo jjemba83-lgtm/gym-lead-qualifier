@@ -310,8 +310,10 @@ def send_hot_lead_notification(conversation, lead_score: Dict) -> bool:
             logger.warning("SALES_TEAM_EMAIL not configured in settings")
             return False
         
+        # Safely get score with default
+        score = lead_score.get('score', 0.0)
+        
         # Determine urgency level
-        score = lead_score['score']
         if score >= 0.8:
             urgency = "🔥🔥🔥 URGENT"
             priority = "IMMEDIATE FOLLOW-UP REQUIRED"
@@ -349,19 +351,10 @@ SCORING FACTORS:
         for factor in lead_score.get('factors', [])[:5]:
             body += f"• {factor}\n"
         
-        # Add intent if detected
-        if lead_score.get('intent'):
-            intent_data = lead_score['intent']
-            body += f"\nDETECTED INTENT:\n"
-            body += f"• Goal: {intent_data.get('detected_intent', 'Unknown')}\n"
-            body += f"• Confidence: {intent_data.get('confidence_level', 0):.0%}\n"
-            if intent_data.get('best_time_to_visit'):
-                body += f"• Preferred time: {intent_data['best_time_to_visit']}\n"
-        
         # Add recommendations
         if lead_score.get('recommendations'):
             body += f"\nRECOMMENDED ACTIONS:\n"
-            for rec in lead_score['recommendations'][:3]:
+            for rec in lead_score.get('recommendations', [])[:3]:
                 body += f"✓ {rec}\n"
         
         # Add conversation summary
@@ -382,8 +375,7 @@ RECENT CONVERSATION:
 NEXT STEPS:
 1. {'Call immediately' if conversation.prospect.phone else 'Email immediately'}
 2. Schedule free class while interest is high
-3. Mention their specific goal: {lead_score.get('intent', {}).get('detected_intent', 'fitness')}
-4. Log interaction in ClubReady
+3. Log interaction in ClubReady
 
 Time is critical - leads cool down quickly!
 {'='*60}
@@ -409,6 +401,8 @@ Dashboard: http://localhost:8000/dashboard/conversation/{conversation.id}/
         
     except Exception as e:
         logger.error(f"Error sending hot lead notification: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
