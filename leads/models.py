@@ -4,7 +4,110 @@ Database models for the gym lead qualification system.
 from django.db import models
 from django.utils import timezone
 from enum import Enum
+from django.db import models
+#from django.contrib.auth import get_user_model
+from django.contrib.auth.models import User
+from django.db import transaction
 
+# Get the custom User model defined in your settings
+#User = get_user_model()
+
+
+class SystemPrompt(models.Model):
+    """
+    Represents the logical prompt grouping (e.g., 'Summary Generator').
+    It points to the specific version that is currently in use.
+    """
+    name = models.CharField(max_length=100, unique=True, help_text="A human-readable name for this prompt group.")
+    
+    # This ForeignKey points to the single, active version of the prompt content.
+    # We use related_name='+' because we don't need a reverse relationship from PromptVersion back to Prompt.
+    active_version = models.ForeignKey(
+        'SystemPromptVersion',
+        on_delete=models.PROTECT,  # Prevent deleting the active version
+        null=True, 
+        blank=True,
+        related_name='+',
+        help_text="The currently active version of the prompt content."
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+
+    # --- Convenience Method to Access Content ---
+    @property
+    def current_content(self):
+        """Property to easily access the content of the active version."""
+        if self.active_version:
+            return self.active_version.content
+        return ""
+
+    # --- Convenience Method for Creating/Activating New Version ---
+    def create_and_activate_new_version(self, new_content: str, created_by: 'User' = None, notes: str = None):
+        """
+        Creates a new version and atomically updates the active_version pointer.
+        """
+        
+        # 1. Determine the next version number
+        last_version = self.versions.order_by('-version').first()
+        new_version_number = (last_version.version + 1) if last_version else 1
+        
+        with transaction.atomic():
+            # 2. Create the new version record
+            new_version = SystemPromptVersion.objects.create(
+                prompt=self,
+                content=new_content,
+                version=new_version_number,
+                created_by=created_by,
+                notes=notes
+            )
+            
+            # 3. Update the active pointer on the parent object
+            self.active_version = new_version
+            self.save(update_fields=['active_version', 'updated_at'])
+            
+        return new_version
+
+
+class SystemPromptVersion(models.Model):
+    """
+    Represents a specific, historical, and immutable version of a prompt's content.
+    """
+    prompt = models.ForeignKey(
+        SystemPrompt, 
+        on_delete=models.CASCADE, 
+        related_name='versions',
+        help_text="The logical prompt set this version belongs to."
+    )
+    
+    content = models.TextField(help_text="The complete text of the prompt for this version.")
+    version = models.PositiveIntegerField(help_text="The sequential version number (e.g., 1, 2, 3).")
+    
+    # Audit Trail Fields
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        help_text="The user who created this version."
+    )
+    notes = models.TextField(
+        blank=True, 
+        help_text="A brief explanation of why this version was created (e.g., 'Fixed tone', 'Added JSON output requirement')."
+    )
+
+    class Meta:
+        unique_together = ('prompt', 'version')
+        ordering = ['prompt', 'version']
+
+    def __str__(self):
+        return f"{self.prompt.name} (v{self.version})"
+
+# class INtent isn;t used at all,  since the LLM is not currently prompted to provide this data, needs generic LLM feature. 
 class Intent(str, Enum):
     """Possible fitness intents/goals."""
     WEIGHT_LOSS = "weight_loss"
@@ -13,16 +116,6 @@ class Intent(str, Enum):
     GENERAL_FITNESS = "general_fitness"
     SOCIAL_COMMUNITY = "social_community"
     JUST_FREE_CLASS = "just_wants_free_class"
-
-
-# Then add this field to your Conversation model:
-# detected_intent = models.CharField(
-#     max_length=50,
-#     choices=[(tag.value, tag.name) for tag in Intent],
-#     blank=True,
-#     null=True,
-#     help_text="Intent detected by sales LLM"
-# )
 
 class Prospect(models.Model):
     """Represents a potential gym member."""

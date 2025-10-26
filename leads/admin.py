@@ -2,9 +2,7 @@
 Django admin configuration for lead management.
 """
 from django.contrib import admin
-from .models import Prospect, Conversation, Message, PendingResponse, SystemConfig
-
-
+from .models import Prospect, Conversation, Message, PendingResponse, SystemConfig, SystemPrompt, SystemPromptVersion
 @admin.register(Prospect)
 class ProspectAdmin(admin.ModelAdmin):
     list_display = ['first_name', 'email', 'phone', 'created_at']
@@ -53,3 +51,49 @@ class SystemConfigAdmin(admin.ModelAdmin):
     def has_delete_permission(self, request, obj=None):
         # Prevent deletion of SystemConfig
         return False
+
+
+# your_app/admin.py
+from django.contrib import admin
+from .models import SystemPrompt, SystemPromptVersion # Make sure this import path is correct
+
+# --- 1. Admin for the Parent Prompt Model (SystemPrompt) ---
+@admin.register(SystemPrompt)
+class SystemPromptAdmin(admin.ModelAdmin):
+    """
+    Manages the logical prompt group.
+    """
+    # Fields to display in the list view
+    list_display = ('name', 'active_version', 'updated_at')
+    
+    # Fields that can be searched
+    search_fields = ('name',)
+    
+    # Allows a quick filter on the right sidebar (optional, but helpful)
+    list_filter = ('updated_at',)
+    
+    # Use autocomplete for the ForeignKey field. 
+    # Requires a search_fields on the related SystemPromptVersionAdmin (see below).
+    autocomplete_fields = ('active_version',)
+
+
+# --- 2. Admin for the Version History Model (SystemPromptVersion) ---
+@admin.register(SystemPromptVersion)
+class SystemPromptVersionAdmin(admin.ModelAdmin):
+    """
+    Manages the historical prompt content.
+    """
+    # Fields to display in the list view
+    list_display = ('prompt', 'version', 'created_by', 'created_at', 'notes')
+    
+    # Fields that can be searched (useful for finding a version by its content)
+    search_fields = ('content', 'notes')
+    
+    # Fields for quick filtering
+    list_filter = ('prompt', 'created_by')
+    
+    # Default ordering: group by prompt, then show newest versions first
+    ordering = ('prompt__name', '-version')
+    
+    # Use autocomplete for the ForeignKey to the parent SystemPrompt
+    autocomplete_fields = ('prompt',)
