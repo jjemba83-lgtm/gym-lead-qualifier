@@ -2,9 +2,10 @@
 Prospect service for managing prospects, conversations, and messages.
 """
 import logging
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, Any, Union
 from django.utils import timezone
 from ..models import Prospect, Conversation, Message, PendingResponse
+from ..schemas import IntentData as CustomerIntent
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,58 @@ def log_message(conversation: Conversation, role: str, content: str) -> Message:
         logger.error(f"Error logging message: {e}")
         raise
 
+def update_conversation_intent(
+    conversation_id: int,
+    intent_data: Dict[str, Any]
+) -> Conversation:
+    """
+    Update conversation with LLM-detected intent using Pydantic validation.
+    """
+    try:
+        # Use Pydantic's parse_obj to accept dicts, mapping-likes, or
+        # already-instantiated Pydantic models. This centralizes parsing
+        # and simplifies error handling compared to manual isinstance checks.
+        try:
+            validated_intent = CustomerIntent.parse_obj(intent_data)
+        except Exception as exc:
+            logger.error("Failed to parse intent_data into CustomerIntent: %s", exc)
+            raise
+        
+        conversation = Conversation.objects.get(id=conversation_id)
+        
+        # Store full LLM analysis (use Pydantic's json() method)
+        conversation.llm_determined_intent = validated_intent.json()
+
+        # Store simplified version for quick filtering (guard missing intent)
+        conversation.intent = (
+            validated_intent.primary_intent.value
+            if validated_intent.primary_intent is not None
+            else None
+        )
+        
+        conversation.save()
+        
+        # Log safely even if primary_intent is None
+        primary_label = (
+            validated_intent.primary_intent.value
+            if validated_intent.primary_intent is not None
+            else "(none)"
+        )
+        logger.info(
+            "Updated intent for conversation %s: %s (confidence: %.2f)",
+            conversation_id,
+            primary_label,
+            validated_intent.confidence if validated_intent.confidence is not None else 0.0,
+        )
+        
+        return conversation
+        
+    except Conversation.DoesNotExist:
+        logger.error(f"Conversation {conversation_id} not found")
+        raise
+    except Exception as e:
+        logger.error(f"Error updating conversation intent: {e}")
+        raise
 
 def update_conversation_status(
     conversation_id: int,

@@ -5,12 +5,15 @@ Run this command every 5 minutes via cron or manually.
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.conf import settings
-from leads.services import email_service, prospect_service, llm_service
+from leads.services import email_service, prospect_service
 from leads.services.lead_scoring_service import calculate_lead_score
 from leads.models import Conversation, SystemConfig
 import logging
+from leads.services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
+#instantiate the llm service
+llm_service = LLMService()
 
 # Standard opening template - no LLM needed!
 STANDARD_OPENING_TEMPLATE = """Hi {first_name}! Thanks for reaching out about our boxing fitness gym. To help match you with the right class, I have a few quick questions:
@@ -198,11 +201,18 @@ class Command(BaseCommand):
                     self.stdout.write(f"Generating response for {conversation.prospect.first_name}...")
                     response_text, provider = llm_service.generate_response(conversation.id)
                     
+                    
                     # Create pending response
                     prospect_service.create_pending_response(
                         conversation=conversation,
-                        llm_content=response_text,
+                        llm_content=response_text.response,
                         llm_provider=provider
+                    )
+
+                    #update intent
+                    prospect_service.update_conversation_intent(
+                        conversation.id,
+                        response_text.intent_data
                     )
                     
                     # Calculate and log lead score for monitoring

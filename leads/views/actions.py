@@ -76,7 +76,19 @@ def approve_response(request, pending_id):
                     pending.conversation.id,
                     status='complete'
                 )
-                messages.success(request, f"Response sent and conversation completed ({pending.conversation.get_outcome_display()})!")
+                # Some models provide get_FOO_display() only when choices are defined.
+                # Use it if available, otherwise fall back to the raw outcome string
+                outcome_display = None
+                get_disp = getattr(pending.conversation, 'get_outcome_display', None)
+                if callable(get_disp):
+                    try:
+                        outcome_display = get_disp()
+                    except Exception:
+                        outcome_display = None
+                if not outcome_display:
+                    outcome_display = (pending.conversation.outcome or '').replace('_', ' ').capitalize()
+
+                messages.success(request, f"Response sent and conversation completed ({outcome_display})!")
             else:
                 messages.success(request, "Response approved and sent successfully!")
         else:
@@ -131,7 +143,15 @@ def edit_response(request, pending_id):
                     pending.conversation.id,
                     status='complete'
                 )
-                messages.success(request, f"Edited response sent and conversation completed ({pending.conversation.get_outcome_display()})!")
+                get_disp = getattr(pending.conversation, 'get_outcome_display', None)
+                if callable(get_disp):
+                    try:
+                        outcome_display = get_disp()
+                    except Exception:
+                        outcome_display = None
+                if not outcome_display:
+                    outcome_display = (pending.conversation.outcome or '').replace('_', ' ').capitalize()
+                messages.success(request, f"Edited response sent and conversation completed ({outcome_display})!")
             else:
                 messages.success(request, "Edited response sent successfully!")
         else:

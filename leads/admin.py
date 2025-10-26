@@ -13,8 +13,8 @@ class ProspectAdmin(admin.ModelAdmin):
 
 @admin.register(Conversation)
 class ConversationAdmin(admin.ModelAdmin):
-    list_display = ['prospect', 'thread_subject', 'status', 'outcome', 'detected_intent', 'last_message_at', 'created_at']
-    list_filter = ['status', 'outcome', 'created_at']
+    list_display = ['prospect', 'thread_subject', 'status', 'outcome', 'intent', 'last_message_at', 'created_at']
+    list_filter = ['status', 'intent', 'outcome', 'created_at']
     search_fields = ['prospect__first_name', 'prospect__email', 'thread_subject']
     readonly_fields = ['created_at']
     raw_id_fields = ['prospect']

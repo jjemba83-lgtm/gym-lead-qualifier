@@ -145,6 +145,11 @@ LOGIN_REDIRECT_URL = '/dashboard/'
 GROK_API_KEY = os.getenv('GROK_API_KEY')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
+LLM_PROVIDER_CONFIG = {
+    "provider": "openai",  # or "anthropic", "google", "ollama"
+    "model": "gpt-4o-mini" # or "claude-3-5-sonnet-20240620", "gemini-1.5-pro-latest", "llama3"
+}
+
 # Gmail API credentials path
 GMAIL_CREDENTIALS_PATH = BASE_DIR / 'secrets' / 'gmail_credentials.json'
 GMAIL_TOKEN_PATH = BASE_DIR / 'secrets' / 'gmail_token.json'

@@ -3,11 +3,9 @@ Database models for the gym lead qualification system.
 """
 from django.db import models
 from django.utils import timezone
-from enum import Enum
-from django.db import models
-#from django.contrib.auth import get_user_model
 from django.contrib.auth.models import User
 from django.db import transaction
+from django.db.models import JSONField
 
 # Get the custom User model defined in your settings
 #User = get_user_model()
@@ -107,15 +105,23 @@ class SystemPromptVersion(models.Model):
     def __str__(self):
         return f"{self.prompt.name} (v{self.version})"
 
-# class INtent isn;t used at all,  since the LLM is not currently prompted to provide this data, needs generic LLM feature. 
-class Intent(str, Enum):
-    """Possible fitness intents/goals."""
-    WEIGHT_LOSS = "weight_loss"
-    STRESS_RELIEF = "stress_relief_mental_health"
-    BOXING_TECHNIQUE = "learn_boxing_technique"
-    GENERAL_FITNESS = "general_fitness"
-    SOCIAL_COMMUNITY = "social_community"
-    JUST_FREE_CLASS = "just_wants_free_class"
+
+# --- Standardized choices for conversation outcomes and intents ---
+OUTCOME_CHOICES = [
+    ('agreed_to_free_class', 'Agreed to free class'),
+    ('not_interested', 'Not interested'),
+    ('reached_message_limit', 'Reached message limit'),
+    ('continue', 'Continue conversation'),
+]
+
+INTENT_CHOICES = [
+    ('weight_loss', 'Weight loss'),
+    ('stress_relief_mental_health', 'Stress relief / mental health'),
+    ('learn_boxing_technique', 'Learn boxing technique'),
+    ('general_fitness', 'General fitness'),
+    ('social_community', 'Social / community'),
+    ('just_wants_free_class', 'Just wants free class'),
+]
 
 class Prospect(models.Model):
     """Represents a potential gym member."""
@@ -139,31 +145,48 @@ class Conversation(models.Model):
         ('complete', 'Complete'),
     ]
 
-    OUTCOME_CHOICES = [
-        ('agreed_to_free_class', 'Agreed to Free Class'),
-        ('not_interested', 'Not Interested'),
-        ('reached_message_limit', 'Reached Message Limit'),
-    ]
+    llm_determined_outcome = JSONField(
+        blank=True,
+        null=True,
+        help_text="Full LLM outcome determination as structured data"
+    )
     
+    llm_determined_intent = JSONField(
+        blank=True,
+        null=True,
+        help_text="Full LLM intent determination as structured data"
+    )
 
+    outcome = models.CharField(
+        max_length=50,
+        choices=OUTCOME_CHOICES,
+        blank=True,
+        null=True,
+        help_text="Simplified outcome for quick filtering"
+    )
+    
+    intent = models.CharField(
+        max_length=50,
+        choices=INTENT_CHOICES,
+        blank=True,
+        null=True,
+        help_text="Simplified intent for quick filtering"
+    )
+    
     prospect = models.ForeignKey(Prospect, on_delete=models.CASCADE, related_name='conversations')
     thread_subject = models.CharField(max_length=255, help_text="Email subject for threading")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
-    outcome = models.CharField(max_length=30, choices=OUTCOME_CHOICES, blank=True, null=True)
-    detected_intent = models.CharField(
-        max_length=50,
-        choices=[(tag.value, tag.name) for tag in Intent],
-        blank=True,
-        null=True,
-        help_text="Intent detected by sales LLM"
-    )
     last_message_at = models.DateTimeField(default=timezone.now)
     created_at = models.DateTimeField(auto_now_add=True)
-
 
     class Meta:
         ordering = ['-last_message_at']
         unique_together = ['prospect', 'thread_subject']
+        indexes = [
+            models.Index(fields=['status', 'last_message_at']),
+            models.Index(fields=['intent']),
+            models.Index(fields=['outcome']),
+        ]
 
     def __str__(self):
         return f"Conversation with {self.prospect.first_name} - {self.status}"
